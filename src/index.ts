@@ -15,18 +15,19 @@ app.post("/forwardEvent", async (req: Request, res: Response) => {
   console.log("Query Params:", req.query);
   console.log("Body (parsed):", JSON.stringify(req.body, null, 2));
 
-  // 👇 Update: destructure new keys from request body
-  const { useBody, useHeaders, url } = req.body;
+  // Extract with default fallbacks
+  const url: string = req.body.url;
+  const useBody: any = req.body.useBody || {};
+  const useHeaders: Record<string, string> = req.body.useHeaders || {};
 
-  // ✅ Validate payload
-  if (!url || !useBody || !useHeaders) {
-    console.error("❌ Missing required fields: 'url', 'useBody', or 'useHeaders'");
+  // Validate only that `url` is present
+  if (!url) {
+    console.error("❌ Missing required field: 'url'");
     return res.status(400).json({
-      error: "Missing required fields: 'url', 'useBody', or 'useHeaders'",
+      error: "Missing required field: 'url'",
     });
   }
 
-  // ✅ Log forwarded components
   console.log(">> Forwarding to URL:", url);
   console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
   console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
