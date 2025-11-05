@@ -56,7 +56,7 @@ app.post("/forwardEvent", async (req: Request, res: Response) => {
   // We are using a put request
   if (useRequest === "PUT") {
     try {
-      const response = await axios.post(url, useBody, {
+      const response = await axios.put(url, useBody, {
         headers: useHeaders,
       });
 
