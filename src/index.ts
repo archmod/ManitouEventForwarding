@@ -19,6 +19,7 @@ app.post("/forwardEvent", async (req: Request, res: Response) => {
   const url: string = req.body.url;
   const useBody: any = req.body.useBody || {};
   const useHeaders: Record<string, string> = req.body.useHeaders || {};
+  const useRequest: string = req.body.useRequest || "POST";
 
   // Validate only that `url` is present
   if (!url) {
@@ -32,22 +33,45 @@ app.post("/forwardEvent", async (req: Request, res: Response) => {
   console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
   console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
 
-  try {
-    const response = await axios.post(url, useBody, {
-      headers: useHeaders,
-    });
+  // we are using a post request
+  if (useRequest === "POST") {
+    try {
+      const response = await axios.post(url, useBody, {
+        headers: useHeaders,
+      });
 
-    console.log("✅ Request successfully forwarded");
-    res.status(200).json({
-      message: "Request forwarded successfully",
-      response: response.data,
-    });
-  } catch (error: any) {
-    console.error("❌ Error forwarding request:", error.response?.data || error.message);
-    res.status(500).json({
-      error: "Failed to forward request",
-      details: error.response?.data || error.message,
-    });
+      console.log("✅ Request successfully forwarded");
+      res.status(200).json({
+        message: "Request forwarded successfully",
+        response: response.data,
+      });
+    } catch (error: any) {
+      console.error("❌ Error forwarding request:", error.response?.data || error.message);
+      res.status(500).json({
+        error: "Failed to forward request",
+        details: error.response?.data || error.message,
+      });
+    }
+  }
+  // We are using a put request
+  if (useRequest === "PUT") {
+    try {
+      const response = await axios.post(url, useBody, {
+        headers: useHeaders,
+      });
+
+      console.log("✅ PUTRequest successfully forwarded");
+      res.status(200).json({
+        message: "Request forwarded successfully",
+        response: response.data,
+      });
+    } catch (error: any) {
+      console.error("❌ Error forwarding request:", error.response?.data || error.message);
+      res.status(500).json({
+        error: "Failed to forward request",
+        details: error.response?.data || error.message,
+      });
+    }
   }
 });
 
