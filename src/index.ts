@@ -47,6 +47,7 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
       }
       case "GET": {
         // 1) Get data
+        console.log(">> Performing GET request to:", url);
         response = await axios.get(url, { headers: useHeaders });
 
         // 2) Post the data back to useReturnAddress with useId included
@@ -93,6 +94,7 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
       useId,
       details: error.response?.data || error.message,
     });
+    console.error("❌ Forwarding failed:", error.response?.data || error.message);
   }
 });
 
