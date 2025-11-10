@@ -7,90 +7,92 @@ const PORT = 8084;
 
 app.use(express.json());
 
-app.post("/forwardEvent", async (req: Request, res: Response) => {
-  console.log("----- Incoming Request to /forwardEvent -----");
-  console.log("Method:", req.method);
-  console.log("Path:", req.originalUrl);
-  console.log("Headers:", JSON.stringify(req.headers, null, 2));
-  console.log("Query Params:", req.query);
-  console.log("Body (parsed):", JSON.stringify(req.body, null, 2));
+interface ForwardEventRequest {
+  url: string;
+  useBody?: any | null;
+  useHeaders?: Record<string, string>;
+  useRequest?: "POST" | "PUT" | "GET";
+  useId?: string | null;
+  useReturnAddress?: string | null;
+}
 
-  // Extract with default fallbacks
-  const url: string = req.body.url;
-  const useBody: any = req.body.useBody || {};
-  const useHeaders: Record<string, string> = req.body.useHeaders || {};
-  const useRequest: string = req.body.useRequest || "POST";
+app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res: Response) => {
+  const {
+    url,
+    useBody = undefined,
+    useHeaders = {},
+    useRequest = "POST",
+    useId = null,
+    useReturnAddress = null,
+  } = req.body;
 
-  // Validate only that `url` is present
   if (!url) {
-    console.error("❌ Missing required field: 'url'");
-    return res.status(400).json({
-      error: "Missing required field: 'url'",
-    });
+    return res.status(400).json({ error: "Missing required field: 'url'" });
   }
 
   console.log(">> Forwarding to URL:", url);
   console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
   console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
+  console.log(">> useId:", useId);
+  console.log(">> useReturnAddress:", useReturnAddress);
 
-  // we are using a post request
-  if (useRequest === "POST") {
-    try {
-      const response = await axios.post(url, useBody, {
-        headers: useHeaders,
-      });
+  try {
+    let response;
+    let callbackStatus: { posted?: boolean; status?: number; data?: any; error?: any } | undefined;
 
-      console.log("✅ Request successfully forwarded");
-      res.status(200).json({
-        message: "Request forwarded successfully",
-        response: response.data,
-      });
-    } catch (error: any) {
-      console.error("❌ Error forwarding request:", error.response?.data || error.message);
-      res.status(500).json({
-        error: "Failed to forward request",
-        details: error.response?.data || error.message,
-      });
+    switch (useRequest) {
+      case "PUT": {
+        response = await axios.put(url, useBody ?? undefined, { headers: useHeaders });
+        break;
+      }
+      case "GET": {
+        // 1) Get data
+        response = await axios.get(url, { headers: useHeaders });
+
+        // 2) Post the data back to useReturnAddress with useId included
+        if (!useReturnAddress) {
+          throw new Error("useReturnAddress is required for GET forwarding callbacks.");
+        }
+
+        // Build payload that includes the useId
+        const callbackPayload = {
+          useId, // <- required in the callback
+          data: response.data, // the data you fetched
+        };
+
+        try {
+          const cbResp = await axios.post(useReturnAddress, callbackPayload, {
+            // ensure JSON; merge any caller headers (caller may rely on auth)
+            headers: { "content-type": "application/json", ...useHeaders },
+          });
+          callbackStatus = { posted: true, status: cbResp.status, data: cbResp.data };
+          console.log("✅ Callback POST sent:", cbResp.status);
+        } catch (cbErr: any) {
+          callbackStatus = {
+            posted: false,
+            error: cbErr.response?.data || cbErr.message,
+          };
+          console.error("❌ Callback POST failed:", cbErr.response?.data || cbErr.message);
+        }
+        break;
+      }
+      default: {
+        response = await axios.post(url, useBody ?? undefined, { headers: useHeaders });
+      }
     }
-  }
-  // We are using a put request
-  if (useRequest === "PUT") {
-    try {
-      const response = await axios.put(url, useBody, {
-        headers: useHeaders,
-      });
 
-      console.log("✅ PUTRequest successfully forwarded");
-      res.status(200).json({
-        message: "Request forwarded successfully",
-        response: response.data,
-      });
-    } catch (error: any) {
-      console.error("❌ Error forwarding request:", error.response?.data || error.message);
-      res.status(500).json({
-        error: "Failed to forward request",
-        details: error.response?.data || error.message,
-      });
-    }
-  }
-  if (useRequest === "GET") {
-    try {
-      const response = await axios.get(url, {
-        headers: useHeaders,
-      });
-
-      console.log("✅ GET Request successfully forwarded");
-      res.status(200).json({
-        message: "Request forwarded successfully",
-        response: response.data,
-      });
-    } catch (error: any) {
-      console.error("❌ Error forwarding request:", error.response?.data || error.message);
-      res.status(500).json({
-        error: "Failed to forward request",
-        details: error.response?.data || error.message,
-      });
-    }
+    res.status(200).json({
+      message: "Request forwarded successfully",
+      useId,
+      response: response?.data,
+      callback: callbackStatus, // present only for GET case
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: "Failed to forward request",
+      useId,
+      details: error.response?.data || error.message,
+    });
   }
 });
 
