@@ -52,7 +52,7 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
 
         // 2) Post the data back to useReturnAddress with useId included
         if (!useReturnAddress) {
-          console.log("❌ useReturnAddress is required for GET forwarding callbacks.");
+          console.log("useReturnAddress is null");
           break;
         }
 
@@ -89,6 +89,7 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
       response: response?.data,
       callback: callbackStatus, // present only for GET case
     });
+    console.log("✅ Forwarding succeeded:", response?.data);
   } catch (error: any) {
     res.status(500).json({
       error: "Failed to forward request",
