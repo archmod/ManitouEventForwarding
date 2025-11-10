@@ -73,6 +73,25 @@ app.post("/forwardEvent", async (req: Request, res: Response) => {
       });
     }
   }
+  if (useRequest === "GET") {
+    try {
+      const response = await axios.get(url, {
+        headers: useHeaders,
+      });
+
+      console.log("✅ GET Request successfully forwarded");
+      res.status(200).json({
+        message: "Request forwarded successfully",
+        response: response.data,
+      });
+    } catch (error: any) {
+      console.error("❌ Error forwarding request:", error.response?.data || error.message);
+      res.status(500).json({
+        error: "Failed to forward request",
+        details: error.response?.data || error.message,
+      });
+    }
+  }
 });
 
 app.get("/", (_req, res) => {

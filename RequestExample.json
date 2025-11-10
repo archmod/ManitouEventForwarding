@@ -1,0 +1,15 @@
+{
+  "useRequest": "PUT",
+
+  "useBody": {
+    "command": "ARM",
+    "ignoreProblems": true
+  },
+
+  "useHeaders": {
+    "X-Api-Key": "jS3YEt27CtJPyn1WVdJCLG6/EfsQtWiX",
+    "X-Company-Token": "snTREhikU1MJuUbwIwHYggK"
+  },
+
+  "url": "https://api.ajax.systems/api/company/AABC172C/hubs/00{0}/commands/arming"
+}
