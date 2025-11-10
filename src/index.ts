@@ -12,8 +12,8 @@ interface ForwardEventRequest {
   useBody?: any | null;
   useHeaders?: Record<string, string>;
   useRequest?: "POST" | "PUT" | "GET";
-  useId?: string | null;
-  useReturnAddress?: string | null;
+  useId?: string | null; // Typically manitou account number
+  useReturnAddress?: string | null; // For GET requests, where to send the data, typically media gateway
 }
 
 app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res: Response) => {
@@ -61,6 +61,8 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
           useId, // <- required in the callback
           data: response.data, // the data you fetched
         };
+
+        console.log(">> Callback payload:", JSON.stringify(callbackPayload, null, 2));
 
         try {
           const cbResp = await axios.post(useReturnAddress, callbackPayload, {
