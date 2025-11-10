@@ -52,7 +52,8 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
 
         // 2) Post the data back to useReturnAddress with useId included
         if (!useReturnAddress) {
-          throw new Error("useReturnAddress is required for GET forwarding callbacks.");
+          console.log("❌ useReturnAddress is required for GET forwarding callbacks.");
+          break;
         }
 
         // Build payload that includes the useId
