@@ -54,7 +54,7 @@ app.post(
         | { posted?: boolean; status?: number; data?: any; error?: any }
         | undefined;
 
-      // 1) Forward the incoming request
+      // 1) Forward the incoming request to the target URL
       switch (useRequest) {
         case "PUT": {
           response = await axios.put(url, useBody ?? undefined, {
@@ -82,33 +82,23 @@ app.post(
         JSON.stringify(response?.data, null, 2)
       );
 
-      // 2) If we have a return address, POST the response body there
+      // 2) If we have a return address, POST the wrapped response body there
       if (useReturnAddress && response) {
         const originalData = response.data;
 
-        // Build payload for callback: include response body + useId
-        let callbackPayload: any;
-
-        if (useId == null) {
-          // Just forward the original response body
-          callbackPayload = originalData;
-        } else if (
-          originalData &&
-          typeof originalData === "object" &&
-          !Array.isArray(originalData)
-        ) {
-          // Merge useId into object responses
-          callbackPayload = {
-            ...originalData,
+        // 👇 REQUIRED STRUCTURE:
+        // {
+        //   signal: {
+        //     useId: <useId>,
+        //     returnBody: <originalData>
+        //   }
+        // }
+        const callbackPayload = {
+          signal: {
             useId,
-          };
-        } else {
-          // Fallback for non-object responses
-          callbackPayload = {
-            useId,
-            data: originalData,
-          };
-        }
+            returnBody: originalData,
+          },
+        };
 
         // 🔥 Log what we are posting back
         console.log(
@@ -124,16 +114,12 @@ app.post(
         );
 
         try {
-          const cbResp = await axios.post(
-            useReturnAddress,
-            callbackPayload,
-            {
-              headers: {
-                "content-type": "application/json",
-                ...useHeaders,
-              },
-            }
-          );
+          const cbResp = await axios.post(useReturnAddress, callbackPayload, {
+            headers: {
+              "content-type": "application/json",
+              ...useHeaders,
+            },
+          });
 
           // 🔥 Log response from returnAddress
           console.log(">> Callback response status:", cbResp.status);
