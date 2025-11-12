@@ -1,19 +1,14 @@
 import express from "express";
 import axios from "axios";
-import https from "https";
 import { Request, Response } from "express";
 
 const app = express();
 const PORT = 8084;
 
-app.use(express.json());
+// ⚠️ Disable TLS certificate verification globally (expired/self-signed OK)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-// Axios instance that ignores SSL issues (expired/self-signed certs)
-const axiosInsecure = axios.create({
-  httpsAgent: new https.Agent({
-    rejectUnauthorized: false, // ⚠ disables SSL verification
-  }),
-});
+app.use(express.json());
 
 interface ForwardEventRequest {
   url: string;
@@ -21,7 +16,7 @@ interface ForwardEventRequest {
   useHeaders?: Record<string, string>;
   useRequest?: "POST" | "PUT" | "GET";
   useId?: string | null; // Typically manitou account number
-  useReturnAddress?: string | null; // Where to send the response body (POST)
+  useReturnAddress?: string | null; // For sending the response body on as a POST
 }
 
 app.post(
@@ -62,20 +57,20 @@ app.post(
       // 1) Forward the incoming request
       switch (useRequest) {
         case "PUT": {
-          response = await axiosInsecure.put(url, useBody ?? undefined, {
+          response = await axios.put(url, useBody ?? undefined, {
             headers: useHeaders,
           });
           break;
         }
         case "GET": {
-          response = await axiosInsecure.get(url, {
+          response = await axios.get(url, {
             headers: useHeaders,
           });
           break;
         }
         default: {
           // POST by default
-          response = await axiosInsecure.post(url, useBody ?? undefined, {
+          response = await axios.post(url, useBody ?? undefined, {
             headers: useHeaders,
           });
         }
@@ -129,7 +124,7 @@ app.post(
         );
 
         try {
-          const cbResp = await axiosInsecure.post(
+          const cbResp = await axios.post(
             useReturnAddress,
             callbackPayload,
             {
