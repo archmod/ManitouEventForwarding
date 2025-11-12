@@ -1,5 +1,6 @@
 import express from "express";
 import axios from "axios";
+import https from "https";
 import { Request, Response } from "express";
 
 const app = express();
@@ -7,100 +8,189 @@ const PORT = 8084;
 
 app.use(express.json());
 
+// Axios instance that ignores SSL issues (expired/self-signed certs)
+const axiosInsecure = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false, // ⚠ disables SSL verification
+  }),
+});
+
 interface ForwardEventRequest {
   url: string;
   useBody?: any | null;
   useHeaders?: Record<string, string>;
   useRequest?: "POST" | "PUT" | "GET";
   useId?: string | null; // Typically manitou account number
-  useReturnAddress?: string | null; // For GET requests, where to send the data, typically media gateway
+  useReturnAddress?: string | null; // Where to send the response body (POST)
 }
 
-app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res: Response) => {
-  const {
-    url,
-    useBody = undefined,
-    useHeaders = {},
-    useRequest = "POST",
-    useId = null,
-    useReturnAddress = null,
-  } = req.body;
+app.post(
+  "/forwardEvent",
+  async (req: Request<{}, {}, ForwardEventRequest>, res: Response) => {
+    const {
+      url,
+      useBody = undefined,
+      useHeaders = {},
+      useRequest = "POST",
+      useId = null,
+      useReturnAddress = null,
+    } = req.body;
 
-  if (!url) {
-    return res.status(400).json({ error: "Missing required field: 'url'" });
-  }
+    if (!url) {
+      return res.status(400).json({ error: "Missing required field: 'url'" });
+    }
 
-  console.log(">> Forwarding to URL:", url);
-  console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
-  console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
-  console.log(">> useId:", useId);
-  console.log(">> useReturnAddress:", useReturnAddress);
+    console.log(">> Forwarding to URL:", url);
+    console.log(">> Forwarding method:", useRequest);
+    console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
+    console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
+    console.log(">> useId:", useId);
+    console.log(">> useReturnAddress:", useReturnAddress);
 
-  try {
-    let response;
-    let callbackStatus: { posted?: boolean; status?: number; data?: any; error?: any } | undefined;
+    try {
+      let response:
+        | {
+            status: number;
+            data: any;
+          }
+        | undefined;
 
-    switch (useRequest) {
-      case "PUT": {
-        response = await axios.put(url, useBody ?? undefined, { headers: useHeaders });
-        break;
-      }
-      case "GET": {
-        // 1) Get data
-        console.log(">> Performing GET request to:", url);
-        response = await axios.get(url, { headers: useHeaders });
+      let callbackStatus:
+        | { posted?: boolean; status?: number; data?: any; error?: any }
+        | undefined;
 
-        // 2) Post the data back to useReturnAddress with useId included
-        if (!useReturnAddress) {
-          console.log("useReturnAddress is null");
+      // 1) Forward the incoming request
+      switch (useRequest) {
+        case "PUT": {
+          response = await axiosInsecure.put(url, useBody ?? undefined, {
+            headers: useHeaders,
+          });
           break;
         }
+        case "GET": {
+          response = await axiosInsecure.get(url, {
+            headers: useHeaders,
+          });
+          break;
+        }
+        default: {
+          // POST by default
+          response = await axiosInsecure.post(url, useBody ?? undefined, {
+            headers: useHeaders,
+          });
+        }
+      }
 
-        // Build payload that includes the useId
-        const callbackPayload = {
-          useId, // <- required in the callback
-          data: response.data, // the data you fetched
-        };
+      console.log("✅ Forwarding succeeded with status:", response?.status);
+      console.log(
+        ">> Upstream response body:",
+        JSON.stringify(response?.data, null, 2)
+      );
 
-        console.log(">> Callback payload:", JSON.stringify(callbackPayload, null, 2));
+      // 2) If we have a return address, POST the response body there
+      if (useReturnAddress && response) {
+        const originalData = response.data;
+
+        // Build payload for callback: include response body + useId
+        let callbackPayload: any;
+
+        if (useId == null) {
+          // Just forward the original response body
+          callbackPayload = originalData;
+        } else if (
+          originalData &&
+          typeof originalData === "object" &&
+          !Array.isArray(originalData)
+        ) {
+          // Merge useId into object responses
+          callbackPayload = {
+            ...originalData,
+            useId,
+          };
+        } else {
+          // Fallback for non-object responses
+          callbackPayload = {
+            useId,
+            data: originalData,
+          };
+        }
+
+        // 🔥 Log what we are posting back
+        console.log(
+          "\n================ CALLBACK POST DEBUG ================"
+        );
+        console.log(">> Posting callback to returnAddress:", useReturnAddress);
+        console.log(
+          ">> Callback payload:\n",
+          JSON.stringify(callbackPayload, null, 2)
+        );
+        console.log(
+          "=====================================================\n"
+        );
 
         try {
-          const cbResp = await axios.post(useReturnAddress, callbackPayload, {
-            // ensure JSON; merge any caller headers (caller may rely on auth)
-            headers: { "content-type": "application/json", ...useHeaders },
-          });
-          callbackStatus = { posted: true, status: cbResp.status, data: cbResp.data };
-          console.log("✅ Callback POST sent:", cbResp.status);
+          const cbResp = await axiosInsecure.post(
+            useReturnAddress,
+            callbackPayload,
+            {
+              headers: {
+                "content-type": "application/json",
+                ...useHeaders,
+              },
+            }
+          );
+
+          // 🔥 Log response from returnAddress
+          console.log(">> Callback response status:", cbResp.status);
+          console.log(
+            ">> Callback response body:",
+            JSON.stringify(cbResp.data, null, 2)
+          );
+
+          callbackStatus = {
+            posted: true,
+            status: cbResp.status,
+            data: cbResp.data,
+          };
         } catch (cbErr: any) {
+          console.error("❌ Callback POST failed:", cbErr.message);
+          console.error(
+            "❌ Callback error response body:",
+            cbErr.response?.data
+          );
+
           callbackStatus = {
             posted: false,
             error: cbErr.response?.data || cbErr.message,
           };
-          console.error("❌ Callback POST failed:", cbErr.response?.data || cbErr.message);
         }
-        break;
+      } else {
+        console.log(
+          ">> No useReturnAddress provided or no upstream response. Skipping callback POST."
+        );
       }
-      default: {
-        response = await axios.post(url, useBody ?? undefined, { headers: useHeaders });
-      }
-    }
 
-    res.status(200).json({
-      message: "Request forwarded successfully",
-      useId,
-      response: response?.data,
-      callback: callbackStatus, // present only for GET case
-    });
-    console.log("✅ Forwarding succeeded:", response?.data);
-  } catch (error: any) {
-    res.status(500).json({
-      error: "Failed to forward request",
-      useId,
-      details: error.response?.data || error.message,
-    });
-    console.error("❌ Forwarding failed:", error.response?.data || error.message);
+      // 3) Respond to the original caller
+      res.status(200).json({
+        message: "Request forwarded successfully",
+        useId,
+        response: response?.data,
+        callback: callbackStatus, // info about callback POST (if any)
+      });
+    } catch (error: any) {
+      console.error(
+        "❌ Forwarding failed:",
+        error.response?.data || error.message
+      );
+
+      res.status(500).json({
+        error: "Failed to forward request",
+        useId,
+        details: error.response?.data || error.message,
+      });
+    }
   }
-});
+);
 
 app.get("/", (_req, res) => {
   res.send("Hello from TypeScript backend!");
