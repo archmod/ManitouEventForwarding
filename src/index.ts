@@ -19,74 +19,89 @@ interface ForwardEventRequest {
   useReturnAddress?: string | null; // For sending the response body on as a POST
 }
 
-app.post(
-  "/forwardEvent",
-  async (req: Request<{}, {}, ForwardEventRequest>, res: Response) => {
-    const {
-      url,
-      useBody = undefined,
-      useHeaders = {},
-      useRequest = "POST",
-      useId = null,
-      useReturnAddress = null,
-    } = req.body;
+app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res: Response) => {
+  const {
+    url,
+    useBody = undefined,
+    useHeaders = {},
+    useRequest = "POST",
+    useId = null,
+    useReturnAddress = null,
+  } = req.body;
 
-    if (!url) {
-      return res.status(400).json({ error: "Missing required field: 'url'" });
+  if (!url) {
+    return res.status(400).json({ error: "Missing required field: 'url'" });
+  }
+
+  console.log(">> Forwarding to URL:", url);
+  console.log(">> Forwarding method:", useRequest);
+  console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
+  console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
+  console.log(">> useId:", useId);
+  console.log(">> useReturnAddress:", useReturnAddress);
+
+  try {
+    let response:
+      | {
+          status: number;
+          data: any;
+        }
+      | undefined;
+
+    let callbackStatus: { posted?: boolean; status?: number; data?: any; error?: any } | undefined;
+
+    // 1) Forward the incoming request to the target URL
+    switch (useRequest) {
+      case "PUT": {
+        response = await axios.put(url, useBody ?? undefined, {
+          headers: useHeaders,
+        });
+        break;
+      }
+      case "GET": {
+        response = await axios.get(url, {
+          headers: useHeaders,
+        });
+        break;
+      }
+      default: {
+        // POST by default
+        response = await axios.post(url, useBody ?? undefined, {
+          headers: useHeaders,
+        });
+      }
     }
 
-    console.log(">> Forwarding to URL:", url);
-    console.log(">> Forwarding method:", useRequest);
-    console.log(">> Forwarding body:", JSON.stringify(useBody, null, 2));
-    console.log(">> Forwarding headers:", JSON.stringify(useHeaders, null, 2));
-    console.log(">> useId:", useId);
-    console.log(">> useReturnAddress:", useReturnAddress);
+    console.log("✅ Forwarding succeeded with status:", response?.status);
+    console.log(">> Upstream response body:", JSON.stringify(response?.data, null, 2));
 
-    try {
-      let response:
-        | {
-            status: number;
-            data: any;
-          }
-        | undefined;
+    // 2) If we have a return address, POST the wrapped response body there
+    if (useReturnAddress && response) {
+      const originalData = response.data;
 
-      let callbackStatus:
-        | { posted?: boolean; status?: number; data?: any; error?: any }
-        | undefined;
+      // Resolve actual callback URL
+      let callbackUrl: string | null = useReturnAddress;
 
-      // 1) Forward the incoming request to the target URL
-      switch (useRequest) {
-        case "PUT": {
-          response = await axios.put(url, useBody ?? undefined, {
-            headers: useHeaders,
-          });
-          break;
-        }
-        case "GET": {
-          response = await axios.get(url, {
-            headers: useHeaders,
-          });
-          break;
-        }
-        default: {
-          // POST by default
-          response = await axios.post(url, useBody ?? undefined, {
-            headers: useHeaders,
-          });
+      if (useReturnAddress === "PERMACONN") {
+        const firstChar = useId?.charAt(0);
+        console.log(">> PERMACONN mode enabled. useId first character:", firstChar);
+
+        if (firstChar === "W") {
+          callbackUrl = "https://10.0.0.79:22635";
+        } else if (firstChar === "F") {
+          callbackUrl = "https://10.0.0.79:22636";
+        } else {
+          console.error("❌ PERMACONN mode: Unknown useId prefix. Expected 'W' or 'F', got:", firstChar);
+          callbackStatus = {
+            posted: false,
+            error: `PERMACONN mode: Unknown useId prefix '${firstChar}'. Expected 'W' or 'F'.`,
+          };
+          callbackUrl = null;
         }
       }
 
-      console.log("✅ Forwarding succeeded with status:", response?.status);
-      console.log(
-        ">> Upstream response body:",
-        JSON.stringify(response?.data, null, 2)
-      );
-
-      // 2) If we have a return address, POST the wrapped response body there
-      if (useReturnAddress && response) {
-        const originalData = response.data;
-
-        // 👇 REQUIRED STRUCTURE:
+      if (callbackUrl) {
+        // REQUIRED STRUCTURE:
         // {
         //   signal: {
         //     useId: <useId>,
@@ -101,20 +116,13 @@ app.post(
         };
 
         // 🔥 Log what we are posting back
-        console.log(
-          "\n================ CALLBACK POST DEBUG ================"
-        );
-        console.log(">> Posting callback to returnAddress:", useReturnAddress);
-        console.log(
-          ">> Callback payload:\n",
-          JSON.stringify(callbackPayload, null, 2)
-        );
-        console.log(
-          "=====================================================\n"
-        );
+        console.log("\n================ CALLBACK POST DEBUG ================");
+        console.log(">> Resolved callback URL:", callbackUrl);
+        console.log(">> Callback payload:\n", JSON.stringify(callbackPayload, null, 2));
+        console.log("=====================================================\n");
 
         try {
-          const cbResp = await axios.post(useReturnAddress, callbackPayload, {
+          const cbResp = await axios.post(callbackUrl, callbackPayload, {
             headers: {
               "content-type": "application/json",
               ...useHeaders,
@@ -123,10 +131,7 @@ app.post(
 
           // 🔥 Log response from returnAddress
           console.log(">> Callback response status:", cbResp.status);
-          console.log(
-            ">> Callback response body:",
-            JSON.stringify(cbResp.data, null, 2)
-          );
+          console.log(">> Callback response body:", JSON.stringify(cbResp.data, null, 2));
 
           callbackStatus = {
             posted: true,
@@ -135,10 +140,7 @@ app.post(
           };
         } catch (cbErr: any) {
           console.error("❌ Callback POST failed:", cbErr.message);
-          console.error(
-            "❌ Callback error response body:",
-            cbErr.response?.data
-          );
+          console.error("❌ Callback error response body:", cbErr.response?.data);
 
           callbackStatus = {
             posted: false,
@@ -146,32 +148,29 @@ app.post(
           };
         }
       } else {
-        console.log(
-          ">> No useReturnAddress provided or no upstream response. Skipping callback POST."
-        );
+        console.log(">> Callback URL not resolved (likely PERMACONN prefix issue). Skipping callback POST.");
       }
-
-      // 3) Respond to the original caller
-      res.status(200).json({
-        message: "Request forwarded successfully",
-        useId,
-        response: response?.data,
-        callback: callbackStatus, // info about callback POST (if any)
-      });
-    } catch (error: any) {
-      console.error(
-        "❌ Forwarding failed:",
-        error.response?.data || error.message
-      );
-
-      res.status(500).json({
-        error: "Failed to forward request",
-        useId,
-        details: error.response?.data || error.message,
-      });
+    } else {
+      console.log(">> No useReturnAddress provided or no upstream response. Skipping callback POST.");
     }
+
+    // 3) Respond to the original caller
+    res.status(200).json({
+      message: "Request forwarded successfully",
+      useId,
+      response: response?.data,
+      callback: callbackStatus, // info about callback POST (if any)
+    });
+  } catch (error: any) {
+    console.error("❌ Forwarding failed:", error.response?.data || error.message);
+
+    res.status(500).json({
+      error: "Failed to forward request",
+      useId,
+      details: error.response?.data || error.message,
+    });
   }
-);
+});
 
 app.get("/", (_req, res) => {
   res.send("Hello from TypeScript backend!");
