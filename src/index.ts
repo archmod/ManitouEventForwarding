@@ -88,7 +88,7 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
 
         if (firstChar === "W") {
           callbackUrl = "https://10.0.0.79:22635";
-        } else if (firstChar === "F") {
+        } else if (firstChar !== "W") {
           callbackUrl = "https://10.0.0.79:22636";
         } else {
           console.error("❌ PERMACONN mode: Unknown useId prefix. Expected 'W' or 'F', got:", firstChar);
