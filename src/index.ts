@@ -14,7 +14,7 @@ interface ForwardEventRequest {
   url: string;
   useBody?: any | null;
   useHeaders?: Record<string, string>;
-  useRequest?: "POST" | "PUT" | "GET";
+  useRequest?: "POST" | "PUT" | "GET" | "PATCH";
   useId?: string | null; // Typically manitou account number
   useReturnAddress?: string | null; // For sending the response body on as a POST
 }
@@ -60,6 +60,12 @@ app.post("/forwardEvent", async (req: Request<{}, {}, ForwardEventRequest>, res:
       }
       case "GET": {
         response = await axios.get(url, {
+          headers: useHeaders,
+        });
+        break;
+      }
+      case "PATCH": {
+        response = await axios.patch(url, useBody ?? undefined, {
           headers: useHeaders,
         });
         break;
