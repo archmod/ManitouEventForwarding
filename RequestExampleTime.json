@@ -1,0 +1,21 @@
+{
+  "useRequest": "GET",
+
+  "useHeaders": {
+    "Authorization": "Bearer YOUR_MERAKI_API_TOKEN",
+    "Content-Type": "application/json"
+  },
+
+  "url": "https://api.meraki.com/api/v1/devices/Q4EJ-ZXBN-V7QP/camera/clip?startTimestamp={a}&endTimestamp={b}",
+
+  "useTimeDetails": {
+    "time": "2026-02-12T10:30:00Z",
+    "offset": -60,
+    "duration": 300,
+    "format": 1
+  },
+
+  "useId": "W12345",
+
+  "useReturnAddress": "PERMACONN"
+}
